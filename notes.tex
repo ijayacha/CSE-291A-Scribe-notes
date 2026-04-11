@@ -81,12 +81,27 @@
 
 \section{Arithmetic Intensity (AI)}
 
-Attention merged QKV is faster single kernel calculation reduced overhead
+Arithmetic Intensity is a measure of how compute-heavy an operation is relative to how much data needed to fetch from memory to perform that computation.
+
+\textbf{Motivating Example:}
+
+In standard multi-head attention, to get the Q, K, and V matrices, you need to compute each separately ($Q = X @ W_Q$, $K = X @ W_K$, $V= X @ W_V$).
+
+Instead, you can speed up this process by performing a merged QKV by a single matrix operation ($X @ W_{QKV}$ and split into 3 matrices).
+
+\subsection{Arithmetic Intensity Formula:}
 
 \[
     \text{AI} = \text{\# operations } / \text{ \# bytes}
 \]
 
+This formula represents the ratio of compute work to memory work. A high AI value means that you are performing a lot of computations for each byte of memory read, while a low AI means the opposite. 
+
+Transformer operations usually have low AI as you need to load entire matrices from memory while performing low-computation like dot products. This means the GPU will just sit idle waiting for loading data.
+
+The practical goal is to raise AI enough so that memory is not a bottleneck in computing speed.
+
+\subsection{Low AI Example 1:}
 \begin{lstlisting}[language=C++, title={Simple add() kernel}]
 void add(int n, float *A, float *B, float *C) {
     for (int i = 0; i < n; i++) {
@@ -95,7 +110,14 @@ void add(int n, float *A, float *B, float *C) {
 }
 \end{lstlisting}
 
-AI = 1/3 (Two loads, one store per add op)
+The code computes the operation of $A[i] + B[i]$ $n$ times via the for loop. 
+
+It also loads $A[i], B[i]$ from memory $n$ times each and stores $C[i]$ to memory $n$ times each, so $3n$ computations total.
+
+According to the AI formula, we have $\#$ operations as $n$, and $\#$ memory loads as $3n$. Therefore, $AI = \frac{n}{3n} = \frac{1}{3}$.
+
+
+\subsection{Low AI Example 2:}
 
 \begin{lstlisting}[language=C++, title={Simple add() and mul() kernel}]
 void add(int n, float* A, float* B, float* C){
@@ -117,11 +139,15 @@ add(n, A, B, tmp1);
 mul(n, tmp1, C, tmp2);
 add(n, tmp2, D, E);
 \end{lstlisting}
-AI for add() = 1/3 (Two loads, one store per math op)
 
-AI for mul() = 1/3 (Two loads, one store per math op)
+Both the add and multiply operations are 1/3 as explained in Example 1. So, if we call the add operation twice and multiply operation once, we have $3n$ total computations and $9n$ total loads and stores. So, $\frac{2n}{6n} = \frac{1}{3}$
 
-Overall arithmetic intensity = 1/3
+\textbf{Therefore, AI is still $\frac{1}{3}$.} 
+
+This is wasteful as we see $tmp1$ being written to memory during add(n, A, B, tmp1), and loaded from memory during mul(n, tmp1, C, tmp2). The same process applies to $tmp2$. Why not keep $tmp1$ or $tmp2$ in memory for quicker processing?
+
+\subsection{More Efficient Example (Kernel Fusion):}
+
 
 \begin{lstlisting}[language=C++, title={Fused kernel}]
 float *A, *B, *C, *D, *E, *tmp1, *tmp2;
@@ -136,7 +162,15 @@ void fused(int n, float *A, float B, floatC, float *D, float *E) {
 fused(n, A, B, C, D, E);
 \end{lstlisting}
 
-AI = 3/5 (4 loads, 1 store per 3 math ops). This is an example of kernel/operation fusion.
+We can instead combine all compute operations in one kernel as shown above. 
+
+Now we have the following:
+
+$\#$ $Operations = 3n$ (2 additions, 1 multiplication for each loop iteration) 
+
+$\#$ $Bytes$ $Loaded = 5n$ (For each iteration, load $A[i], B[i], C[i], D[i]$, and store once to $E[i]$) 
+
+\textbf{AI = 3/5}. Higher AI! Since we lowered the amount of memory accesses, we have sped up our kernel processing time.
 
 \section{Graph Optimization}
 \subsection{Parallelization}
