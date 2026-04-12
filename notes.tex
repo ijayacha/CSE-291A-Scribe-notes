@@ -267,29 +267,16 @@ parallelize through threads
 on gpu stream through processors
 
 \section{MatMul}
-\begin{lstlisting}[language=C++]
-float A[n][n], B[n][n], C[n][n];
 
-for (int i = 0; i < n; ++i) {
-    for (int j = 0; j < n; ++j) {
-        C[i][j] = 0;
-        for (int k = 0; k < n; ++k) {
-            C[i][j] += A[i][k] * B[j][k];
-        }
-    }
-}
-\end{lstlisting}
+This section goes over how we can speed up an important operation in neural networks: Matrix Multiplication.
 
 \subsection{MatMul Complexity}
 O(N\^3) complexity, but can get O(N\^2.371552)
-make matmul fast by increasing ops, decreasing bytes
 
-ideally we want everythign to be local to processors (in registers), but registers are expensive \& small, thus we have memory hierarchy (L1, L2, etc. DRAM) on increasing latency
+\subsection{Slow Operation Example of MatMul:} 
 
-\subsection{Register Tiled MatMul}
 \begin{lstlisting}[language=C++]
 dram float A[n][n], B[n][n], C[n][n];
-
 for (int i = 0; i < n; ++i) {
     for (int j = 0; j < n; ++j) {
         register float c = 0;
@@ -302,11 +289,18 @@ for (int i = 0; i < n; ++i) {
     }
 }
 \end{lstlisting}
-read a = n\^3, read b = n\^3, write C = n\^2
-need 3 registers (1 a, 1 b, 1 c) = 1 + 1 + 1 = 3
-total read cost = 2*n\^3*speed(moving component from dram to register)
-2x bc for matmul you multiply a*b (1 op) and then add to c (1 op) = 2 ops
 
+This is a standard matrix multiplication that uses 3 registers. The read cost is high since A[i][k] represents one read from DRAM, and B[j][k] represents another read from DRAM. Since we're in a triple nested for-loop, we have $2n^3$ read operations when referencing both matrices. We are also writing to C with a cost of $n^2$.
+
+\subsubsection{How to Make MatMul Fast:}
+
+In order to make matrix multiplication fast, we need to maximize Arithmetic Intensity (keep the number of operations high while decreasing the number of bytes). 
+
+\textbf{How do we do this?} We can do this by reusing the data loaded into the \textbf{registers} and reduce the number of \textbf{DRAM} reads. Because registers are local to processors, this makes registers extremely fast when reading/writing data (essentially 0 latency). DRAM, on the other hand are much slower. However, registers are expensive and small in memory size so we need to find a way to use these efficiently.
+
+To re-use data in registers, we can use approaches like Tiling, which is a technique of re-using data from registers instead of accessing DRAM memory, as shown in the next section.
+
+\subsection{Register Tiled MatMul}
 \begin{lstlisting}[language=C++]
 dram float A[n/v1][n/v3][v1][v3];
 dram float B[n/v2][n/v3][v2][v3];
@@ -324,9 +318,27 @@ for (int i = 0; i < n/v1; ++i) {
     }
 }
 \end{lstlisting}
-read a = n\^3/v2, read b = n\^3/v1, write C = n\^2
-need v1*v3 + v2*v3 + v1*v2 registers
-total read cost = (n\^3/v2 + n\^3/v1)*speed(dram -> register)
+
+\textbf{Main Idea: We update our for loop to iterate by block/tile instead of one single element. This reduces read costs since we're reading a tile once and we re-use this across multiple iterations.}
+
+v1, v2, and v3 represent how big your tiles are. For example, if v1 = 2, v2 = 2, v3 = 2, then the tile of A is 2x2, tile of B is 2x2, and output tile of C is 2x2. This is what we load and write into each register for computation.
+
+Recall that in our slower standard MatMul, each iteration loads one element at a time (i.e., register a = A[i][k], where A[i][k] is one element). For our tiled version, \textbf{register "a"} loads a (v1 x v3) tile at a time (a[v1][v3] = A[i][k], where A[i][k] is an entire v1 x v3 block).
+
+We're essentially batching a bunch of numbers and performing dot products for each tiled batch instead of computing one by one. 
+
+Now, lets re-compute the read cost: 
+
+Our total length for our triple-nested for loop is now of size $n/v1 * n/v2 * n/v3$ which simplifies to $n^3 / (v1 * v2 * v3)$. 
+
+Within the loop, reading \textbf{register a} is $v1 * v3$ since we're loading a whole tile of size v1 by v3. So we multiply this by the nested loop size to get $n^2/v2$. The same applies for reading register b.
+
+For write cost, c is still $n^2$ since we still need to store every element regardless of how we tile. So we're speeding up just the read time.
+
+We also need to increase the number of registers needed, since each register can only hold one element. So the number of registers is the sum of our size of our tiles for A (v1 * v3), B (v2 * v3), and C (v1 * v2).
+
+This increase in registers for faster computation is the tradeoff for tiling. The idea is that you want to set v1 and v2 to be as large as possible as long as you have the amount of registers to support it.
+
 \subsubsection{Cache-aware Tiling}
 \begin{lstlisting}[language=C++]
 dram float A[n/b1][b1][n];
@@ -342,10 +354,20 @@ for (int i = 0; i < n/b1; ++i) {
     }
 }
 \end{lstlisting}
-data movement path: DRAM -> L1 Cache (cache-tiling) -> register (register tiling)
-A dram -> l1 cost: n / b1 * n * b1 = n\^2
-B dram -> l1 cost: n / b1 * n / b2 * 2 * n = n\^3 / 1
-b1 * n + b2 * n < L1 cache size 
+
+\textbf{Main Idea: Instead of loading tiles into registers, this loads tiles into the L1 cache, which is slower than registers but faster than DRAM.}
+
+You can fit larger tiles in this L1 cache compared to the registers. As shown in the code, we are now loading the entire row of the matrix A and B since the L1 cache is bigger than registers.
+
+We load \textbf{l1cache a} $n/b1$ times via for loop, where each load is size $b1 * n$. So, we have $n^2$ total reads.
+
+We load \textbf{l1cache b} $n/b1 * n/b2$ times via for loop where each load is size $b2*n$. So, we have $n^3 / b1$ total reads.
+
+Choose b1 and b2 small enough so that your tiles can fit in this L1 cache, similar to how v1 and v2 is small enough to fit in registers.
+
+
+
+\subsubsection{Combining both Register Tiling and Cache Tiling}
 
 \begin{lstlisting}[language=C++]
 dram float A[n/b1][b1/v1][n][v1];
@@ -368,15 +390,16 @@ for (int i = 0; i < n/b1; ++i) {
     }
 }
 \end{lstlisting}
-outside loop = cache-tiling
-- use b1, b2
-- DRAM -> L1 reads here
-- NEED COST EQUATIONS
-inside loop = register tiling
-- use v1, v2
-- L1 -> register cache reads here
-- NEED COST EQUATIONS
 
+\textbf{Main Idea:} We combine both Register and Cache tiling to minimize data movement among the memory hierarchy. Cache tiling reduces DRAM reads, and register tiling reduces L1 Cache reads. 
+
+For the 2 outer loops i and j, we implement a cache tiling level by loading large tiles of A and B into the L1 cache. The cost of reading \textbf{L1 cache a} is $n^2$, \textbf{L1 cache b} is $n^3/b1$.
+
+Our 3 inner loops x, y, k take small subsets from this L1 cache and put into registers. Then, these registers compute dot products. 
+
+This avoids going back to the DRAM for every multiply by loading into the L1.
+
+\subsubsection{Data Reuse:}
 \begin{lstlisting}[language=C++]
 float A[n][n];
 float B[n][n];
@@ -384,6 +407,8 @@ float C[n][n];
 
 C[i][j] = sum(A[i][k] * B[j][k], axis=k)
 \end{lstlisting}
+
+Note that the read cost for A depends on v2 and not v1, because A[i][k] is independent of j. This means tiling the j dimension by v2 allows the same tile of A to be reused v2 times, which is exactly where the cost reduction comes from.
 
 \subsection{Homework Candidate}
 
