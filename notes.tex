@@ -32,8 +32,8 @@
 
 \lstset{style=mystyle}
 
-\setlength{\oddsidemargin}{0.25 in}
-\setlength{\evensidemargin}{-0.25 in}
+\setlength{\oddsidemargin}{0 in}
+\setlength{\evensidemargin}{0 in}
 \setlength{\topmargin}{-0.6 in}
 \setlength{\textwidth}{6.5 in}
 \setlength{\textheight}{8.5 in}
@@ -522,7 +522,5 @@ C[i][j] = sum(A[i][k] * B[j][k], axis=k)
 \end{lstlisting}
 
 Note that the read cost for A depends on v2 and not v1, because A[i][k] is independent of j. This means tiling the j dimension by v2 allows the same tile of A to be reused v2 times, which is exactly where the cost reduction comes from.
-
-\subsection{Homework Candidate}
 
 \end{document}
