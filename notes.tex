@@ -174,23 +174,38 @@ $\#$ $Bytes$ $Loaded = 5n$ (For each iteration, load $A[i], B[i], C[i], D[i]$, a
 
 \section{Graph Optimization}
 \subsection{Parallelization}
+The main goal is to parallelize the graph compute over multiple devices
+
 \subsection{Parallelization Problems}
-- partition
-- communicate
-- schedule
-- consistency
-- auto parallelize
+Problems to solve:
+\begin{itemize}
+    \item How to partition?
+    \item How to communicate?
+    \item How to schedule?
+    \item Consistency
+    \item How to auto-parallelize?
+\end{itemize}
+
 \subsection{Runtime \& Scheduling}
-- schedule compute / communication / memory as fast as possible
-- overlap communication w/ compute
-- subject to memory constraints
+The goal is to compute/communication/memory in a way that:
+\begin{itemize}
+    \item as fast as possible
+    \item overlaps communication with compute
+    \item subject to memory constraints
+\end{itemize}
+
 \subsection{Operator Implementation}
-- get fastest possible implementation of MatMul, Conv2d
-- optimized for diff GPU types: V100, A100, H100, phone, TPU
-deploy model for diff GPU types need adaptation based on varying constraints
-- diff precision fp32, fp16, fp8, fp4
-- diff shape conv2d\_3x3, conv2d\_5x5, matmul2D, 3D, attention
-- goal is to maximize AI
+The goal is to get the fastest implementation of:
+\begin{itemize}
+    \item MatMul
+    \item Conv2d
+\end{itemize}
+for different:
+\begin{itemize}
+    \item hardware: V100, A100, H100, phone, TPU
+    \item precision: fp32, fp16, fp8, fp4
+    \item shapes: conv2d\_3x3, conv2d\_5x5, matmul2D, 3D, attention
+\end{itemize}
 
 \section{Fast Operators}
 \subsection{Vectorization}
