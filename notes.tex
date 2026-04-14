@@ -80,7 +80,6 @@
     } % Lecture name, Lecturer, Scribes
 
 \section{Arithmetic Intensity (AI)}
-
 Arithmetic Intensity is a measure of how compute-heavy an operation is relative to how much data needed to fetch from memory to perform that computation.
 
 \textbf{Motivating Example:}
@@ -89,8 +88,8 @@ In standard multi-head attention, to get the Q, K, and V matrices, you need to c
 
 Instead, you can speed up this process by performing a merged QKV by a single matrix operation ($X @ W_{QKV}$ and split into 3 matrices).
 
-\subsection{Arithmetic Intensity Formula:}
 
+\subsection{Arithmetic Intensity Formula:}
 \[
     \text{AI} = \text{\# operations } / \text{ \# bytes}
 \]
@@ -100,6 +99,7 @@ This formula represents the ratio of compute work to memory work. A high AI valu
 Transformer operations usually have low AI as you need to load entire matrices from memory while performing low-computation like dot products. This means the GPU will just sit idle waiting for loading data.
 
 The practical goal is to raise AI enough so that memory is not a bottleneck in computing speed.
+
 
 \subsection{Low AI Example 1:}
 \begin{lstlisting}[language=C++, title={Simple add() kernel}]
@@ -118,7 +118,6 @@ According to the AI formula, we have $\#$ operations as $n$, and $\#$ memory loa
 
 
 \subsection{Low AI Example 2:}
-
 \begin{lstlisting}[language=C++, title={Simple add() and mul() kernel}]
 void add(int n, float* A, float* B, float* C){
     for (int i=0; i<n; i++) {
@@ -146,9 +145,8 @@ Both the add and multiply operations are 1/3 as explained in Example 1. So, if w
 
 This is wasteful as we see $tmp1$ being written to memory during add(n, A, B, tmp1), and loaded from memory during mul(n, tmp1, C, tmp2). The same process applies to $tmp2$. Why not keep $tmp1$ or $tmp2$ in memory for quicker processing?
 
+
 \subsection{More Efficient Example (Kernel Fusion):}
-
-
 \begin{lstlisting}[language=C++, title={Fused kernel}]
 float *A, *B, *C, *D, *E, *tmp1, *tmp2;
 // assume arrays are allocated here
@@ -172,30 +170,48 @@ $\#$ $Bytes$ $Loaded = 5n$ (For each iteration, load $A[i], B[i], C[i], D[i]$, a
 
 \textbf{AI = 3/5}. Higher AI! Since we lowered the amount of memory accesses, we have sped up our kernel processing time.
 
-\section{Graph Optimization}
+\section{Layers of Optimization Overview}
+
+
+\subsection{Graph Optimization}
+In order to improve performance (e.g., increase arithmetic intensity and reduce memory access), we can optimize a data flow graph by rewriting it, often by fusing operations together. At a high level, this can be done through:
+\begin{itemize}
+    \item Writing Rules/Template: Engineers manually define optimization rules. For example, if the graph has $Conv \rightarrow ReLU$, we can fuse them into a single operation.
+    \item Auto Discovery: The system automatically generates different valid versions of the computation graph (e.g., with different fusion or execution strategies) evaluates their performance using a cost model or by profiling, and selects the most efficient one.
+\end{itemize}
+
 \subsection{Parallelization}
-\subsection{Parallelization Problems}
-- partition
-- communicate
-- schedule
-- consistency
-- auto parallelize
-\subsection{Runtime \& Scheduling}
-- schedule compute / communication / memory as fast as possible
-- overlap communication w/ compute
-- subject to memory constraints
+Another way to improve performance is to parallelize the graph compute over multiple devices. In order to do this, we have to consider the following:
+\begin{itemize}
+    \item How to partition? How to split the computation graph across multiple devices (e.g., by data, model, or operators).
+    \item How to communicate? How devices exchange intermediate results (e.g., gradients, activations) efficiently with minimal overhead.
+    \item How to schedule? How to order and overlap computation and communication to maximize hardware utilization and reduce idle time.
+    \item Consistency: How to ensure all devices maintain a correct and synchronized view of the model/parameters during training.
+    \item How to auto-parallelize? How to automatically decide partitioning, communication, and scheduling without manual tuning.
+\end{itemize}
+
+
+\subsection{Runtime: Schedule/Memory}
+Another way to improve performance is through runtime scheduling, i.e., deciding when to execute 
+computation, communication, and memory operations. The goal is to:
+\begin{itemize}
+    \item Schedule compute, communication, and memory operations in an order that minimizes total execution time.
+    \item Overlap communication with computation whenever possible to avoid idle hardware.
+    \item Respect memory constraints, making sure that intermediate results fit within available memory.
+\end{itemize}
+
+
 \subsection{Operator Implementation}
-- get fastest possible implementation of MatMul, Conv2d
-- optimized for diff GPU types: V100, A100, H100, phone, TPU
-deploy model for diff GPU types need adaptation based on varying constraints
-- diff precision fp32, fp16, fp8, fp4
-- diff shape conv2d\_3x3, conv2d\_5x5, matmul2D, 3D, attention
-- goal is to maximize AI
+Lastly, we can improve performance by optimizing the implementations of individual operations such as such as matrix multiplication 
+(MatMul) and convolution (Conv2d). This involves:
+\begin{itemize}
+    \item Adapting implementations to different hardware platforms (e.g., V100, A100, H100, mobile devices, TPUs), each with different constraints.
+    \item Supporting different numerical precisions (e.g., fp32, fp16, fp8, fp4).
+    \item Handling different input shapes and variants (e.g., conv2d\_3x3, conv2d\_5x5, 2D/3D matmul, attention), which may require specialized implementations.
+\end{itemize}
 
-\section{Fast Operators}
+\section{How to Make Operators Fast in General?}
 \subsection{Vectorization}
-
-
 \begin{lstlisting}[language=C++, title={Unvectorized}]
 float A[256], B[256], C[256]
 for (int i = 0; i < 256; ++i) {
@@ -206,67 +222,152 @@ for (int i = 0; i < 256; ++i) {
 
 \begin{lstlisting}[language=C++, title={Vectorized}]
 for (int i = 0; i < 64; ++i) {
-    float4 a = load_float4(A + 1*4);
+    float4 a = load_float4(A + i*4);
     float4 b = load_float4(B + i*4);
     float4 c = add_float4(a, b);
     store_float4(C + i* 4, c);
 \end{lstlisting}
 
-Vectorization minimizes writes
+Vectorization speeds up performance by allowing each instruction to process multiple data elements in parallel using SIMD hardware. It also reduces instruction overhead, since there are fewer instructions overall.
 
 \subsection{Data Layout}
-- store matrix in memory
-- stored sequentially (1D, no tensor awareness)
-- computation memory limit crucial for quantized ML
-- Row Major: A[i, j] = A.data[i * A.shape[1] + j] (left to right)
-- Col Major: A[i, j] = A.data[j * A.shape[0] + i] (top to bottom)
-- pytorch utilizes row major calc
+Data layout describes how multi-dimensional data (like matrices or tensors) is arranged in linear memory. Although we index data with multiple dimensions, it is stored as a 1D array, and the layout determines how indices map to memory locations.
 
-INCLUDE EXAMPLE PROGRAM ROW/COL MAJOR SETUP
-setup row major 2D array, but reading in column major, swap to make program efficient
+\subsubsection{Row-Major and Column-Major}
+Row-major means elements in each row are stored contiguously in memory, and rows are placed one after another. The indexing formula is as follows:
+$$A[i, j] = A.data[i*A.shape[1]+j]$$
 
-\subsubsection{Strides}
-ML systems store data in strides format: A[i, j] = A.data[offset + i * A.strides[0] + j * A.strides[1]]
 
-offset: offset of tensor relative to underlying storage
-strides: strides[i] = \# of elements needed to be skipped in memory to move "one unit" in the i-th dimeniosn of the tensor
+\bigskip
+Column-major means elements in each column are stored contiguously in memory, and columns are placed one after another. The indexing formula is as follows:
+$$A[i, j] = A.data[j*A.shape[0] + i]$$
 
-\begin{lstlisting}[language=Python]
+\bigskip
+In order to make a program efficient, it is important to consider how the matrix is stored. For example, consider the following program, assuming row-major layout:
+\begin{lstlisting}[language=C++, title={Summing a 2D array}]
+int sum_array_rows(int a[M][N])
+{
+    int i, j, sum = 0;
 
+    for (j = 0; j < N; j++)
+        for (i = 0; i < M; i++)
+            sum += a[i][j];
+
+    return sum;
+}
 \end{lstlisting}
 
-A.strides[0] = 1, A.strides[1] = A.shape[0] --> col major
-A.strides[0] = A.shape[1], A.strides[1] = 1 --> row major
+In this program, the loop iterates over columns first (index $j$) and then rows (index $i$), accessing elements in the order $a[0][j], a[1][j], a[2][j]$, and so on.
 
-if a tensor of shape [1,2,3,4] is stored in contiguous in memory following row major, its strides are (24, 12, 4, 1)
+For row-major layout, where elements in each row are stored contiguously, this results in a strided (non-contiguous) memory access pattern, leading to poor cache utilization and inefficient use of memory bandwidth.
 
-strides can separate underlying storage \& view of tensor
-enable zero-copy of frequently used operators
+A more efficient approach is to iterate over rows first and columns second, so that elements are accessed sequentially within each row. This contiguous access pattern improves cache locality and overall performance.
 
-\subsubsection{Operator: Slice}
-read first 3 rows, 2 columns
-change offset by +1, reduce shape to [3,2]
-no copy needed of tensor
-\subsubsection{Operator: Transpose}
-permute by moving first stride to end 
-zero copy, underlying storage unchanged
-\subsubsection{Operator: Broadcast}
-b.strides=[1], b.shape=[1, 3], b.data=[1, 2, 3]
-broadcast so b.shape=[4, 3], b.data=[1, 2, 3], b.strides=[?]
-add elements to stride tensor
-\subsubsection{Operator: Swap Tiles}
+\subsubsection{Strides}
+Most modern ML systems represent tensors using the stride format. In this format, each dimension has a stride that specifies how many elements to skip in memory when that index increases, along with an offset indicating the starting position. This representation is especially powerful for tensor operations, as many transformations (e.g., slicing or transposing) can be implemented as zero-copy operations by simply adjusting the strides and offset, without moving data. The indexing formula is:
+$$A[i, j] = A.data[offset + i * A.strides[0] + j * A.strides[1]]$$
 
-\subsubsection{Problems of Strides}
-- memory access can become not continuous
-- many vectorized ops require continuous storage
+\paragraph{Operator: Slice}
+To transpose a tensor, we modify the shape and strides while keeping the offset the same. The general rule for a transpose between dimensions $i$ and $j$ is:
+\begin{itemize}
+\item Swap $A.\text{shape}[i]$ and $A.\text{shape}[j]$
+\item Swap $A.\text{strides}[i]$ and $A.\text{strides}[j]$
+\end{itemize}
+
+\paragraph{Operator: Transpose}
+A transpose operation can be implemented as a zero-copy operation by modifying the tensor’s metadata without changing the underlying data. Specifically, transpose swaps the corresponding dimensions in both the shape and strides.
+
+For a transpose between dimensions $i$ and $j$:
+\begin{itemize}
+    \item Swap $A.\text{shape}[i]$ and $A.\text{shape}[j]$
+    \item Swap $A.\text{strides}[i]$ and $A.\text{strides}[j]$
+\end{itemize}
+
+\paragraph{Operator: Broadcast}
+To broadcast a tensor, we modify the shape and strides while keeping the offset the same. The general rule for broadcasting along dimension k is:
+\begin{itemize}
+\item If the original size is $1$ and expanded to size $N$, set $A.\text{shape}[k] = N$
+\item Set $A.\text{strides}[k] = 0$
+\end{itemize}
+
+\paragraph{Operator: Swap Tiles}
+To swap tiles of a tensor, we reinterpret the tensor as a grid of tiles and then change how tiles are traversed via shape and strides. The general rule is:
+\begin{itemize}
+    \item First reshape the tensor to separate tile dimensions (i.e., split each dimension into number of tiles and tile size)
+    \item Swap the tile-related dimensions in $A.\text{shape}$
+    \item Swap the corresponding entries in $A.\text{strides}$
+\end{itemize}
+
+Example:
+Consider a $4 \times 4$ tensor stored in row-major order:
+\[
+A =
+\begin{bmatrix}
+0 & 1 & 2 & 3 \\
+4 & 5 & 6 & 7 \\
+8 & 9 & 10 & 11 \\
+12 & 13 & 14 & 15
+\end{bmatrix}
+\]
+
+Divide the tensor into $2 \times 2$ tiles. Then:
+\begin{itemize}
+    \item Original shape: $[4, 4]$, strides: $[4, 1]$
+    \item Reshape to: $[2, 2, 2, 2]$ (tile\_row, tile\_col, inner\_row, inner\_col)
+    \item New strides: $[8, 2, 4, 1]$
+\end{itemize}
+
+To swap tiles, swap the tile dimensions (first two axes):
+\begin{itemize}
+    \item New shape: $[2, 2, 2, 2]$
+    \item New strides: $[2, 8, 4, 1]$
+\end{itemize}
+
+\textbf{Resulting layout:}
+\[
+\begin{bmatrix}
+0 & 1 & 8 & 9 \\
+4 & 5 & 12 & 13 \\
+2 & 3 & 10 & 11 \\
+6 & 7 & 14 & 15
+\end{bmatrix}
+\]
+
+\paragraph{Problems of Strides}
+While the stride format is flexible and enables zero-copy operations, it can introduce inefficiencies. In particular:
+\begin{itemize}
+    \item Memory access may become non-contiguous, leading to poor cache utilization
+    \item Many vectorized operations require contiguous memory, so non-contiguous tensors may need to be copied
+\end{itemize}
+
 
 \subsection{Parallelization}
-elementise, deeper dive will be covered in later lecture
-ADD EXAMPLE CODE FROM LECTURE
-parallelize through threads
-on gpu stream through processors
+Parallelization speeds up computation by running independent operations concurrently across multiple processing units. In many numerical workloads, loop iterations are independent and can be executed in parallel. For example:
 
-\section{MatMul}
+\begin{lstlisting}[language=C++, title={Vectorized}]
+for (int i = 0; i < 64; ++i) {
+    float4 a = load_float4(A + i*4);
+    float4 b = load_float4(B + i*4);
+    float4 c = add_float4(a, b);
+    store_float4(C + i* 4, c);
+}
+\end{lstlisting}
+
+Here, vectorization processes multiple elements at once using SIMD instructions (e.g., \texttt{float4}), providing data-level parallelism. However, the loop still executes sequentially and does not utilize thread-level parallelism.
+
+\begin{lstlisting}[language=C++, title={Vectorized \& Parallelized}]
+#pragma omp parallel for
+for (int i = 0; i < 64; ++i) {
+    float4 a = load_float4(A + i*4);
+    float4 b = load_float4(B + i*4);
+    float4 c = add_float4(a, b);
+    store_float4(C + i* 4, c);
+}
+\end{lstlisting}
+
+By adding \texttt{\#pragma omp parallel for}, the loop iterations are distributed across multiple threads, enabling thread-level parallelism. Since each iteration is independent, this is safe and can significantly improve performance.
+
+\section{MatMul-Specific Optimization}
 
 This section goes over how we can speed up an important operation in neural networks: Matrix Multiplication.
 
