@@ -84,9 +84,9 @@ Arithmetic Intensity is a measure of how compute-heavy an operation is relative 
 
 \textbf{Motivating Example:}
 
-In standard multi-head attention, to get the Q, K, and V matrices, you need to compute each separately ($Q = X @ W_Q$, $K = X @ W_K$, $V= X @ W_V$).
+In standard multi-head attention, to get the Q, K, and V matrices, you need to compute each separately (using matrix multiplication to obtain $Q = XW_Q$, $K = XW_K$, $V= XW_V$).
 
-Instead, you can speed up this process by performing a merged QKV by a single matrix operation ($X @ W_{QKV}$ and split into 3 matrices).
+Instead, you can speed up this process by performing a merged QKV by a single matrix multiplication operation ($XW_{QKV}$ and split into 3 matrices).
 
 
 \subsection{Arithmetic Intensity Formula:}
@@ -94,9 +94,9 @@ Instead, you can speed up this process by performing a merged QKV by a single ma
     \text{AI} = \text{\# operations } / \text{ \# bytes}
 \]
 
-This formula represents the ratio of compute work to memory work. A high AI value means that you are performing a lot of computations for each byte of memory read, while a low AI means the opposite. 
+This formula represents the ratio of compute work to memory work. A high AI value means that many computations are performed for each byte of memory read, while a low AI value means the opposite. 
 
-Transformer operations usually have low AI as you need to load entire matrices from memory while performing low-computation like dot products. This means the GPU will just sit idle waiting for loading data.
+Transformer operations usually have low AI as entire matrices must be loaded in from memory while performing low computation, like dot products. As a result, GPU compute time is wasted on idling while waiting for data to be loaded.
 
 The practical goal is to raise AI enough so that memory is not a bottleneck in computing speed.
 
@@ -110,9 +110,9 @@ void add(int n, float *A, float *B, float *C) {
 }
 \end{lstlisting}
 
-The code computes the operation of $A[i] + B[i]$ $n$ times via the for loop. 
+The code computes the $A[i] + B[i]$ operation $n$ times via the for loop. 
 
-It also loads $A[i], B[i]$ from memory $n$ times each and stores $C[i]$ to memory $n$ times each, so $3n$ computations total.
+It also loads $A[i], B[i]$ from memory $n$ times each and stores $C[i]$ to memory $n$ times each, resulting in $3n$ computations total.
 
 According to the AI formula, we have $\#$ operations as $n$, and $\#$ memory loads as $3n$. Therefore, $AI = \frac{n}{3n} = \frac{1}{3}$.
 
@@ -139,11 +139,11 @@ mul(n, tmp1, C, tmp2);
 add(n, tmp2, D, E);
 \end{lstlisting}
 
-Both the add and multiply operations are 1/3 as explained in Example 1. So, if we call the add operation twice and multiply operation once, we have $3n$ total computations and $9n$ total loads and stores. So, $\frac{2n}{6n} = \frac{1}{3}$
+Both the add and multiply operations are $\frac{1}{3}$, as explained in Example 1. If we call the add operation twice and multiply operation once, we have $3n$ total computations and $9n$ total loads and stores, so $\frac{2n}{6n} = \frac{1}{3}.$
 
 \textbf{Therefore, AI is still $\frac{1}{3}$.} 
 
-This is wasteful as we see $tmp1$ being written to memory during add(n, A, B, tmp1), and loaded from memory during mul(n, tmp1, C, tmp2). The same process applies to $tmp2$. Why not keep $tmp1$ or $tmp2$ in memory for quicker processing?
+This is wasteful, as we see $tmp1$ being written to memory during add(n, A, B, tmp1), and loaded from memory during mul(n, tmp1, C, tmp2). The same process applies to $tmp2$. Why not keep $tmp1$ or $tmp2$ in memory for quicker processing?
 
 
 \subsection{More Efficient Example (Kernel Fusion):}
@@ -177,7 +177,7 @@ $\#$ $Bytes$ $Loaded = 5n$ (For each iteration, load $A[i], B[i], C[i], D[i]$, a
 In order to improve performance (e.g., increase arithmetic intensity and reduce memory access), we can optimize a data flow graph by rewriting it, often by fusing operations together. At a high level, this can be done through:
 \begin{itemize}
     \item Writing Rules/Template: Engineers manually define optimization rules. For example, if the graph has $Conv \rightarrow ReLU$, we can fuse them into a single operation.
-    \item Auto Discovery: The system automatically generates different valid versions of the computation graph (e.g., with different fusion or execution strategies) evaluates their performance using a cost model or by profiling, and selects the most efficient one.
+    \item Auto Discovery: The system automatically generates different valid versions of the computation graph (e.g., with different fusion or execution strategies), evaluates their performance using a cost model or by profiling, and selects the most efficient one.
 \end{itemize}
 
 \subsection{Parallelization}
@@ -206,7 +206,7 @@ Lastly, we can improve performance by optimizing the implementations of individu
 (MatMul) and convolution (Conv2d). This involves:
 \begin{itemize}
     \item Adapting implementations to different hardware platforms (e.g., V100, A100, H100, mobile devices, TPUs), each with different constraints.
-    \item Supporting different numerical precisions (e.g., fp32, fp16, fp8, fp4).
+    \item Supporting different numerical precisions (e.g., fp32, fp16, fp8, fp4; fp = floating point).
     \item Handling different input shapes and variants (e.g., conv2d\_3x3, conv2d\_5x5, 2D/3D matmul, attention), which may require specialized implementations.
 \end{itemize}
 
@@ -235,7 +235,7 @@ Data layout describes how multi-dimensional data (like matrices or tensors) is a
 
 \subsubsection{Row-Major and Column-Major}
 Row-major means elements in each row are stored contiguously in memory, and rows are placed one after another. The indexing formula is as follows:
-$$A[i, j] = A.data[i*A.shape[1]+j]$$
+$$A[i, j] = A.data[i\cdot A.shape[1]+j]$$
 
 \begin{figure}[h]
     \centering
@@ -246,7 +246,7 @@ $$A[i, j] = A.data[i*A.shape[1]+j]$$
 
 \bigskip
 Column-major means elements in each column are stored contiguously in memory, and columns are placed one after another. The indexing formula is as follows:
-$$A[i, j] = A.data[j*A.shape[0] + i]$$
+$$A[i, j] = A.data[j\cdot A.shape[0] + i]$$
 
 \begin{figure}[h]
     \centering
@@ -269,15 +269,15 @@ int sum_array_rows(int a[M][N])
 }
 \end{lstlisting}
 
-In this program, the loop iterates over columns first (index $j$) and then rows (index $i$), accessing elements in the order $a[0][j], a[1][j], a[2][j]$, and so on.
+In this program, the loop iterates over columns first (index $j$) and then rows (index $i$), accessing elements in the order $a[0][j]$, $a[1][j]$, $a[2][j]$, and so on.
 
 For row-major layout, where elements in each row are stored contiguously, this results in a strided (non-contiguous) memory access pattern, leading to poor cache utilization and inefficient use of memory bandwidth.
 
 A more efficient approach is to iterate over rows first and columns second, so that elements are accessed sequentially within each row. This contiguous access pattern improves cache locality and overall performance.
 
 \subsubsection{Strides}
-Most modern ML systems represent tensors using the stride format. In this format, each dimension has a stride that specifies how many elements to skip in memory when that index increases, along with an offset indicating the starting position. This representation is especially powerful for tensor operations, as many transformations (e.g., slicing or transposing) can be implemented as zero-copy operations by simply adjusting the strides and offset, without moving data. The indexing formula is:
-$$A[i, j] = \text{A.data}[\text{offset} + i * A.\text{strides}[0] + j * A.\text{strides}[1]]$$
+Most modern ML systems represent tensors using the stride format, which separates the underlying storage and the view of the tensor. In this format, each dimension has a stride that specifies how many elements to skip in memory when that index increases, along with an offset indicating the starting position. This representation is especially powerful for tensor operations, as many transformations (e.g., slicing or transposing) can be implemented as zero-copy operations by simply adjusting the strides and offset, without moving data. The indexing formula is:
+$$A[i, j] = \text{A.data}[\text{offset} + i \cdot A.\text{strides}[0] + j \cdot A.\text{strides}[1]]$$
 
 \paragraph{Operator: Slice}
 Used to get particular rows and columns of a tensor. The naive way is to copy 
@@ -286,14 +286,14 @@ same existing memory where the tensor already exists. Thus, a slice operation
 can be implemented as a zero-copy operation by adjusting the offset and shape 
 of the tensor. Specifically, for a slice that starts at index $s$ along dimension $i$:
 \begin{itemize}
-    \item Update the offset: $A.\text{offset } += s * A.\text{strides}[i]$
+    \item Update the offset: $A.\text{offset } += s \cdot A.\text{strides}[i]$
     \item Update the shape: $A.\text{shape}[i]\ = \text{new\_size}$ (where new\_size is the size of the slice along dimension $i$)
     \item Strides remain unchanged since the memory layout is the same, just with a different starting point and size.
 \end{itemize}
 
 However, for a step slice (e.g., $A[::2]$), we also need to update the stride:
 \begin{itemize}
-    \item Update the offset: $A.\text{offset } += s * A.\text{strides}[i]$ 
+    \item Update the offset: $A.\text{offset } += s \cdot A.\text{strides}[i]$ 
     \item Update the shape: $A.\text{shape}[i]\ = \text{new\_size}$ (where new\_size is the size of the slice along dimension $i$, accounting for the step size)
     \item Update the stride: $A.\text{strides}[i]\ *= \text{step}$ (where step is the stride of the slice, e.g., 2 for $A[::2]$)
 \end{itemize}
@@ -396,14 +396,14 @@ By adding \texttt{\#pragma omp parallel for}, the loop iterations are distribute
 This section goes over how we can speed up an important operation in neural networks: Matrix Multiplication.
 
 \subsection{MatMul Complexity}
-O(N$^3$) complexity, but can get O(N$^{2.371552}$)
+$O(N^3)$ complexity, but can obtain $O(N^{2.371552})$.
 
 \begin{figure}[h]
     \centering
     \includegraphics[width=0.75\textwidth]{images/matmul.png}
 \end{figure}
 
-To make matmul fast, we increase the number of operations while decreasing the number of bytes loaded from memory. Ideally we want everything to be local to processors (in registers), but registers are expensive and small, so we have memory hiearchy.
+To make matmul fast, we increase the number of operations while decreasing the number of bytes loaded from memory. Ideally, we want everything to be local to processors (in registers), but registers are expensive and small, so we have memory hierarchy.
 
 CPU Thread $<$ Registers $<$ L1 Cache (0.5 ns) $<$ L2 Cache (7 ns) $<$ DRAM (200 ns)
 
@@ -424,15 +424,15 @@ for (int i = 0; i < n; ++i) {
 }
 \end{lstlisting}
 
-This is a standard matrix multiplication that uses 3 registers. The read cost is high since A[i][k] represents one read from DRAM, and B[j][k] represents another read from DRAM. Since we're in a triple nested for-loop, we have $2n^3$ read operations when referencing both matrices. We are also writing to C with a cost of $n^2$.
+This is a standard matrix multiplication that uses 3 registers. The read cost is high since $A[i][k]$ and $B[j][k]$ both read from DRAM. Since there is a triple nested for-loop, there are $2n^3$ read operations when reading from matrices A and B. Additionally, there are $n^2$ write operations to C.
 
 \subsubsection{How to Make MatMul Fast:}
 
-In order to make matrix multiplication fast, we need to maximize Arithmetic Intensity (keep the number of operations high while decreasing the number of bytes). 
+In order to make matrix multiplication fast, we need to maximize Arithmetic Intensity (i.e. keep the number of operations high while decreasing the number of bytes). 
 
-\textbf{How do we do this?} We can do this by reusing the data loaded into the \textbf{registers} and reduce the number of \textbf{DRAM} reads. Because registers are local to processors, this makes registers extremely fast when reading/writing data (essentially 0 latency). DRAM, on the other hand are much slower. However, registers are expensive and small in memory size so we need to find a way to use these efficiently.
+\textbf{How do we do this?} We can do this by reusing the data loaded into the \textbf{registers} and reduce the number of \textbf{DRAM} reads. Since registers are local to processors, registers extremely fast when reading/writing data (essentially zero latency). On the other hand, DRAM is much slower. However, registers are expensive and small in memory size, so we need to find a way to use these efficiently.
 
-To re-use data in registers, we can use approaches like Tiling, which is a technique of re-using data from registers instead of accessing DRAM memory, as shown in the next section.
+To reuse data in registers, we can use approaches like tiling, which reuses data from registers instead of accessing DRAM memory, as shown in the next section.
 
 \subsection{Register Tiled MatMul}
 \begin{figure}[h]
@@ -458,49 +458,49 @@ for (int i = 0; i < n/v1; ++i) {
 }
 \end{lstlisting}
 
-\textbf{Main Idea: We update our for loop to iterate by block/tile instead of one single element. This reduces read costs since we're reading a tile once and we re-use this across multiple iterations.}
+\textbf{Main Idea: We update our for loop to iterate by block/tile instead of one single element. This reduces read costs since we read each tile once and re-use it across multiple iterations.}
 
-v1, v2, and v3 represent how big your tiles are. For example, if v1 = 2, v2 = 2, v3 = 2, then the tile of A is 2x2, tile of B is 2x2, and output tile of C is 2x2. This is what we load and write into each register for computation.
+$v1$, $v2$, and $v3$ represent how big the tiles are. For example, if $v1 = 2$, $v2 = 2$, $v3 = 2$, then the tile of A is $2\cdot2$, tile of B is $2\cdot2$, and output tile of C is $2\cdot2$. This is what we load and write into each register for computation.
 
-Recall that in our slower standard MatMul, each iteration loads one element at a time (i.e., register a = A[i][k], where A[i][k] is one element). For our tiled version, \textbf{register "a"} loads a (v1 x v3) tile at a time (a[v1][v3] = A[i][k], where A[i][k] is an entire v1 x v3 block).
+Recall that in our slower standard MatMul, each iteration loads one element at a time (i.e., register $a = A[i][k]$, where $A[i][k]$ is one element). For our tiled version, \textbf{register "a"} loads a ($v1 \cdot v3$) tile at a time ($a[v1][v3] = A[i][k]$, where $A[i][k]$ is an entire $v1 \cdot v3$ block).
 
-We're essentially batching a bunch of numbers and performing dot products for each tiled batch instead of computing one by one. 
+Instead of computing one by one, we are now batching a many elements and performing dot products for each tiled batch. 
 
-Now, lets re-compute the cost: 
+Now, let's re-compute the cost: 
 
-Our total length for our triple-nested for loop is now of size $n/v1 * n/v2 * n/v3$ which simplifies to $n^3 / (v1 * v2 * v3)$. 
+Our total length for the triple-nested for loop is now of size $\frac{n}{v1} \cdot \frac{n}{v2} \cdot \frac{n}{v3}$, which simplifies to $\frac{n^3}{v1 \cdot v2 \cdot v3}$. 
 
 Breakdown per loop iteration $(i, j, k)$:
 \begin{itemize}
-    \item Load one tile from A of size $v1 * v3$
-    \item Load one tile from B of size $v2 * v3$
+    \item Load one tile from A of size $v1 \cdot v3$
+    \item Load one tile from B of size $v2 \cdot v3$
 \end{itemize}
 
-So total reads from A are:
+Thus, the number of total reads from A is:
 $$
-\frac{n^3}{v1 * v2 * v3} * (v1 * v3) = \frac{n^2}{v2}
-$$
-
-Total reads from B are:
-$$
-\frac{n^3}{v1 * v2 * v3} * (v2 * v3) = \frac{n^2}{v1}
+\frac{n^3}{v1 \cdot v2 \cdot v3} \cdot (v1 \cdot v3) = \frac{n^2}{v2}
 $$
 
-Now for writes to C: for each $(i, j)$ tile we write a $v1 * v2$ output tile once (after accumulating over $k$). The number of $(i, j)$ tiles is $n/v1 * n/v2$, so total writes are:
+Total number of reads from B is:
 $$
-\frac{n}{v1} * \frac{n}{v2} * (v1 * v2) = n^2
+\frac{n^3}{v1 \cdot v2 \cdot v3} \cdot (v2 \cdot v3) = \frac{n^2}{v1}
 $$
 
-So the total DRAM element traffic is:
+Now for writes to C: for each $(i, j)$ tile we write a $v1 \cdot v2$ output tile once (after accumulating over $k$). The number of $(i, j)$ tiles is $\frac{n}{v1} \cdot \frac{n}{v2}$, so total writes are:
+$$
+\frac{n}{v1} \cdot \frac{n}{v2} \cdot (v1 \cdot v2) = n^2
+$$
+
+The total DRAM element traffic is:
 $$
 \frac{n^2}{v2} + \frac{n^2}{v1} + n^2
 $$
 
-For write cost, c is still $n^2$ since we still need to store every element regardless of how we tile. So we're speeding up just the read time.
+For the write cost, $c$ is still $n^2$, since we still need to store every element regardless of how we tile. As a result, only the read time is improved.
 
-We also need to increase the number of registers needed, since each register can only hold one element. So the number of registers is the sum of our size of our tiles for A (v1 * v3), B (v2 * v3), and C (v1 * v2).
+We also need to increase the number of registers, since each register can only hold one element. Consequently, the number of registers is the sum of our size of our tiles for A ($v1 \cdot v3$), B ($v2 \cdot v3$), and C ($v1 \cdot v2$).
 
-This increase in registers for faster computation is the tradeoff for tiling. The idea is that you want to set v1 and v2 to be as large as possible as long as you have the amount of registers to support it.
+This increase in registers for faster computation is the tradeoff for tiling. We want to set $v1$ and $v2$ to be as large as possible, as long as we have the amount of registers to support it.
 
 \subsubsection{Cache-aware Tiling}
 \begin{lstlisting}[language=C++]
@@ -520,15 +520,15 @@ for (int i = 0; i < n/b1; ++i) {
 
 \textbf{Main Idea: Instead of loading tiles into registers, this loads tiles into the L1 cache, which is slower than registers but faster than DRAM.}
 
-The data movement is from dram, to dram -> l1 cache (cache tiling), to l1 cache -> registers (register tiling).
+The data movement is from DRAM, to dram $\rightarrow$ L1 cache (cache tiling), to L1 cache $\rightarrow$ registers (register tiling).
 
-You can fit larger tiles in this L1 cache compared to the registers. As shown in the code, we are now loading the entire row of the matrix A and B since the L1 cache is bigger than registers.
+You can fit larger tiles in this L1 cache compared to the registers. As shown in the code, we are now loading the entire row of the matrix A and B since the L1 cache is larger than registers.
 
-We load \textbf{l1cache a} $n/b1$ times via for loop, where each load is size $b1 * n$. So, we have $n^2$ total reads.
+We load \textbf{L1cache a} $\frac{n}{b1}$ times via for loop, where each load is size $b1 \cdot n$. So, we have $n^2$ total reads.
 
-We load \textbf{l1cache b} $n/b1 * n/b2$ times via for loop where each load is size $b2*n$. So, we have $n^3 / b1$ total reads.
+We load \textbf{L1cache b} $\frac{n}{b1} \cdot \frac{n}{b2}$ times via for loop where each load is size $b2\cdot n$. So, we have $\frac{n^3}{b1}$ total reads.
 
-Choose b1 and b2 small enough so that your tiles can fit in this L1 cache, similar to how v1 and v2 is small enough to fit in registers.
+Choose $b1$ and $b2$ to be small enough so that the tiles can fit in this L1 cache, similar to how $v1$ and $v2$ is small enough to fit in registers.
 
 
 
@@ -556,13 +556,13 @@ for (int i = 0; i < n/b1; ++i) {
 }
 \end{lstlisting}
 
-\textbf{Main Idea:} We combine both Register and Cache tiling to minimize data movement among the memory hierarchy. Cache tiling reduces DRAM reads, and register tiling reduces L1 Cache reads. 
+\textbf{Main Idea:} We combine both register and cache tiling to minimize data movement among the memory hierarchy. Cache tiling reduces DRAM reads, and register tiling reduces L1 cache reads. 
 
-For the 2 outer loops i and j, we implement a cache tiling level by loading large tiles of A and B into the L1 cache. The cost of reading \textbf{L1 cache a} is $n^2$, \textbf{L1 cache b} is $n^3/b1$.
+For the 2 outer loops $i$ and $j$, we implement a cache tiling level by loading large tiles of A and B into the L1 cache. The cost of reading \textbf{L1 cache a} is $n^2$, \textbf{L1 cache b} is $\frac{n^3}{b1}$.
 
-Our 3 inner loops x, y, k take small subsets from this L1 cache and put into registers. Then, these registers compute dot products. 
+Our 3 inner loops $x$, $y$, $k$ take small subsets from this L1 cache and put the values into registers for the dot products to be computed. 
 
-This avoids going back to the DRAM for every multiply by loading into the L1.
+By loading values into the L1 cache, we can avoid accessing the DRAM for every multiply operation.
 
 \subsubsection{Data Reuse:}
 \begin{lstlisting}[language=C++]
@@ -573,6 +573,6 @@ float C[n][n];
 C[i][j] = sum(A[i][k] * B[j][k], axis=k)
 \end{lstlisting}
 
-Note that the read cost for A depends on v2 and not v1, because A[i][k] is independent of j. This means tiling the j dimension by v2 allows the same tile of A to be reused v2 times, which is exactly where the cost reduction comes from.
+Note that the read cost for A depends on $v2$ and not $v1$, because $A[i][k]$ is independent of $j$. This means tiling the $j$ dimension by $v2$ allows the same tile of A to be reused $v2$ times, which is exactly where the cost reduction comes from.
 
 \end{document}
