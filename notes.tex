@@ -5,6 +5,7 @@
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage{amsmath}
+\usepackage{hyperref}
 
 \definecolor{codegreen}{rgb}{0,0.6,0}
 \definecolor{codegray}{rgb}{0.5,0.5,0.5}
@@ -70,7 +71,6 @@
 \begin{document}
 
 \lecture{4: Tensor Formats, MatMul, Accelerators}{Hao Zhang}{
-    Ian Jayachandran,
     Samar Karanch,
     Kevin Lin,
     Owen Park,
@@ -396,7 +396,8 @@ By adding \texttt{\#pragma omp parallel for}, the loop iterations are distribute
 This section goes over how we can speed up an important operation in neural networks: Matrix Multiplication.
 
 \subsection{MatMul Complexity}
-$O(N^3)$ complexity, but can obtain $O(N^{2.371552})$.
+
+MatMul normally takes $O(N^3)$ complexity, but advanced algorithms can reduce computation time to $O(N^{2.371552})$.
 
 \begin{figure}[h]
     \centering
@@ -405,6 +406,7 @@ $O(N^3)$ complexity, but can obtain $O(N^{2.371552})$.
 
 To make matmul fast, we increase the number of operations while decreasing the number of bytes loaded from memory. Ideally, we want everything to be local to processors (in registers), but registers are expensive and small, so we have memory hierarchy.
 
+Consequently, we have the following memory hierarchy, from fastest to slowest:
 CPU Thread $<$ Registers $<$ L1 Cache (0.5 ns) $<$ L2 Cache (7 ns) $<$ DRAM (200 ns)
 
 \subsection{Slow Operation Example of MatMul:} 
@@ -574,5 +576,17 @@ C[i][j] = sum(A[i][k] * B[j][k], axis=k)
 \end{lstlisting}
 
 Note that the read cost for A depends on $v2$ and not $v1$, because $A[i][k]$ is independent of $j$. This means tiling the $j$ dimension by $v2$ allows the same tile of A to be reused $v2$ times, which is exactly where the cost reduction comes from.
+
+\section*{Scribe Responsibilities}
+\begin{itemize}
+    \item{Samar Karanch}: Section 2, Images
+    \item{Kevin Lin}: Outline + Code Blocks, Section 3 
+    \item{Owen Park}: Section 2, 3
+    \item{Shaurya Raswan}: Outline, Proofreading, Images
+    \item{Julie Wu}: Proofreading
+    \item{Jaewoong Yun}: Section 1, 4
+\end{itemize}
+All work can be tracked through the GitHub repository: \href{https://github.com/TangyKiwi/CSE-291A-Scribe}{https://github.com/TangyKiwi/CSE-291A-Scribe}
+
 
 \end{document}
